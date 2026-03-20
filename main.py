@@ -1,52 +1,41 @@
+from flask import Flask, Response
 import cv2
 from vehicle_detection import detect_vehicles
 from traffic_control import calculate_signal_time
 
-video = cv2.VideoCapture("traffic/traffic.mp4 - Copy.mp4")
+app = Flask(__name__)
 
-while True:
+def generate_frames():
+    video = cv2.VideoCapture("traffic/traffic.mp4 - Copy.mp4")
 
-    ret, frame = video.read()
+    while True:
+        success, frame = video.read()
+        if not success:
+            break
 
-    if not ret:
-        break
+        boxes, vehicle_count = detect_vehicles(frame)
 
-    boxes, vehicle_count = detect_vehicles(frame)
+        for (x1, y1, x2, y2) in boxes:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
 
-    # Draw vehicle boxes
-    for (x1, y1, x2, y2) in boxes:
+        signal_time = calculate_signal_time(vehicle_count)
 
-        cv2.rectangle(frame,
-                      (x1, y1),
-                      (x2, y2),
-                      (0,255,0),
-                      2)
+        cv2.putText(frame, f"Vehicle Count: {vehicle_count}", (20,40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
 
-    # Calculate signal time
-    signal_time = calculate_signal_time(vehicle_count)
+        cv2.putText(frame, f"Green Signal Time: {signal_time} sec", (20,80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 2)
 
-    # Display vehicle count
-    cv2.putText(frame,
-                f"Vehicle Count: {vehicle_count}",
-                (20,40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0,0,255),
-                2)
+        _, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
 
-    # Display signal time
-    cv2.putText(frame,
-                f"Green Signal Time: {signal_time} sec",
-                (20,80),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (255,0,0),
-                2)
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-    cv2.imshow("Smart Traffic AI", frame)
+@app.route('/')
+def video_feed():
+    return Response(generate_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
-    if cv2.waitKey(1) == 27:
-        break
-
-video.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
